@@ -1,6 +1,6 @@
 use std::env;
 
-use minifb::{Window, WindowOptions, Key};
+use minifb::{Key, Window, WindowOptions};
 
 const USAGE: &str = "Usage: beatsync <file.wav>";
 
@@ -32,7 +32,6 @@ fn main() {
 		println!("{}", sample.unwrap());
 	}
 
-
 	// gui stuff
 	// in future, make this buffer mut and update it in main loop
 	let buffer: Vec<u32> = vec![u32::MAX; WIDTH * HEIGHT];
@@ -40,8 +39,11 @@ fn main() {
 		"Test - ESC to exit",
 		WIDTH,
 		HEIGHT,
-		WindowOptions::default()
-	).unwrap_or_else(|e| { panic!("{}", e); });
+		WindowOptions::default(),
+	)
+	.unwrap_or_else(|e| {
+		panic!("{}", e);
+	});
 	// 16700 for 60 fps, 6900 for 144
 	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
 
