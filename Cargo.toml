@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 hound = "3.5.0"
+minifb = "0.23.0"
