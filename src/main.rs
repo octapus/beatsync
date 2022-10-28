@@ -24,8 +24,28 @@ fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	Some((reader, width, height))
 }
 
+fn render(input: WavReader<BufReader<File>>, width: usize, height: usize) -> Vec<u32> {
+	let mut output = vec![0u32; width * height];
+	let mut iter = input.into_samples::<i16>().step_by(2); // render only 1 channel for now
+	let step = iter.len() / height;
+
+	for j in 0..height {
+		let mut max = 0;
+		for _ in 0..step {
+			max = match iter.next().unwrap() {
+				Ok(x) => std::cmp::max(max, x.abs()),
+				Err(_) => break,
+			};
+		}
+		for i in 0..(usize::try_from(max).unwrap() * width / usize::try_from(i16::MAX).unwrap()) {
+			output[j * width + i] = u32::MAX;
+		}
+	}
+	output
+}
+
 fn main() {
-	let (mut reader, width, height) = match parse_args() {
+	let (reader, width, height) = match parse_args() {
 		Some((r, w, h)) => (r, w, h),
 		None => {
 			println!("{USAGE}");
@@ -37,13 +57,9 @@ fn main() {
 	assert_eq!(16, reader.spec().bits_per_sample);
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
-	for sample in reader.samples::<i16>().skip(200).take(20) {
-		println!("{}", sample.unwrap());
-	}
-
 	// gui stuff
 	// in future, make this buffer mut and update it in main loop
-	let buffer: Vec<u32> = vec![u32::MAX; width * height];
+	let buffer = render(reader, width, height);
 	let mut window = Window::new(
 		"Test - ESC to exit",
 		width,
