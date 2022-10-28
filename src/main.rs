@@ -24,19 +24,13 @@ fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	Some((reader, width, height))
 }
 
-fn render(input: WavReader<BufReader<File>>, width: usize, height: usize) -> Vec<u32> {
+fn render(input: &[i16], width: usize, height: usize) -> Vec<u32> {
 	let mut output = vec![0u32; width * height];
-	let mut iter = input.into_samples::<i16>().step_by(2); // render only 1 channel for now
-	let step = iter.len() / height;
-
-	for j in 0..height {
-		let mut max = 0;
-		for _ in 0..step {
-			max = match iter.next().unwrap() {
-				Ok(x) => std::cmp::max(max, x.abs()),
-				Err(_) => break,
-			};
-		}
+	let max_list = input
+		.chunks_exact(input.len() / height)
+		.map(|chunk| chunk.iter().fold(0, |acc, &x| std::cmp::max(acc, x.abs())));
+	assert_eq!(max_list.len(), height);
+	for (j, max) in max_list.enumerate() {
 		for i in 0..(usize::try_from(max).unwrap() * width / usize::try_from(i16::MAX).unwrap()) {
 			output[j * width + i] = u32::MAX;
 		}
@@ -58,9 +52,18 @@ fn main() {
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
 	let start = Instant::now();
-	let buffer = render(reader, width, height);
+	let c1: Vec<i16> = reader
+		.into_samples()
+		.step_by(2)
+		.map(|s| s.unwrap())
+		.collect();
 	let elapsed = start.elapsed();
-	println!("Load + Render: {elapsed:.3?}");
+	println!("Load: {elapsed:.3?}");
+
+	let start = Instant::now();
+	let buffer = render(&c1, width, height);
+	let elapsed = start.elapsed();
+	println!("Render: {elapsed:.3?}");
 
 	// gui stuff
 	// in future, make buffer mut and update it in main loop
