@@ -1,4 +1,4 @@
-use std::{env, ffi::OsString, fs::File, io::BufReader};
+use std::{env, ffi::OsString, fs::File, io::BufReader, time::Instant};
 
 use hound::WavReader;
 use minifb::{Key, Window, WindowOptions};
@@ -57,9 +57,13 @@ fn main() {
 	assert_eq!(16, reader.spec().bits_per_sample);
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
-	// gui stuff
-	// in future, make this buffer mut and update it in main loop
+	let start = Instant::now();
 	let buffer = render(reader, width, height);
+	let elapsed = start.elapsed();
+	println!("Load + Render: {elapsed:.3?}");
+
+	// gui stuff
+	// in future, make buffer mut and update it in main loop
 	let mut window = Window::new(
 		"Test - ESC to exit",
 		width,
