@@ -1,25 +1,34 @@
-use std::env;
+use std::{env, ffi::OsString, fs::File, io::BufReader};
 
+use hound::WavReader;
 use minifb::{Key, Window, WindowOptions};
 
-const USAGE: &str = "Usage: beatsync <file.wav>";
+const USAGE: &str = "Usage: beatsync <file.wav> [window width] [window height]";
 
-const WIDTH: usize = 1920;
-const HEIGHT: usize = 1080;
+const DEFAULT_WIDTH: usize = 1920;
+const DEFAULT_HEIGHT: usize = 1080;
 
-fn main() {
+fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
+	let args: Vec<OsString> = env::args_os().collect();
 	// waiting for if let chains to become stable...
-	let file = match env::args_os().nth(1) {
-		Some(f) => f,
-		None => {
-			println!("{}", USAGE);
-			return;
-		}
-	};
-	let mut reader = match hound::WavReader::open(file) {
+	let reader = match hound::WavReader::open(args.get(1)?) {
 		Ok(r) => r,
 		Err(_) => {
-			println!("{}", USAGE);
+			return None;
+		}
+	};
+	let width =
+		(|| args.get(2)?.to_string_lossy().trim().parse::<usize>().ok())().unwrap_or(DEFAULT_WIDTH);
+	let height = (|| args.get(3)?.to_string_lossy().trim().parse::<usize>().ok())()
+		.unwrap_or(DEFAULT_HEIGHT);
+	Some((reader, width, height))
+}
+
+fn main() {
+	let (mut reader, width, height) = match parse_args() {
+		Some((r, w, h)) => (r, w, h),
+		None => {
+			println!("{USAGE}");
 			return;
 		}
 	};
@@ -34,11 +43,11 @@ fn main() {
 
 	// gui stuff
 	// in future, make this buffer mut and update it in main loop
-	let buffer: Vec<u32> = vec![u32::MAX; WIDTH * HEIGHT];
+	let buffer: Vec<u32> = vec![u32::MAX; width * height];
 	let mut window = Window::new(
 		"Test - ESC to exit",
-		WIDTH,
-		HEIGHT,
+		width,
+		height,
 		WindowOptions::default(),
 	)
 	.unwrap_or_else(|e| {
@@ -49,6 +58,6 @@ fn main() {
 
 	// main loop
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
-		window.update_with_buffer(&buffer, WIDTH, HEIGHT).unwrap();
+		window.update_with_buffer(&buffer, width, height).unwrap();
 	}
 }
