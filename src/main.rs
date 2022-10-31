@@ -27,11 +27,11 @@ fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 fn render(input: &[i16], width: usize, height: usize) -> Vec<u32> {
 	let mut output = vec![0u32; width * height];
 	let max_list = input
-		.chunks_exact(input.len() / height)
+		.chunks_exact(input.len() / width)
 		.map(|chunk| chunk.iter().fold(0, |acc, &x| std::cmp::max(acc, x.abs())));
-	assert_eq!(max_list.len(), height);
-	for (j, max) in max_list.enumerate() {
-		for i in 0..(usize::try_from(max).unwrap() * width / usize::try_from(i16::MAX).unwrap()) {
+	assert_eq!(max_list.len(), width);
+	for (i, max) in max_list.enumerate() {
+		for j in 0..(usize::try_from(max).unwrap() * height / usize::try_from(i16::MAX).unwrap()) {
 			output[j * width + i] = u32::MAX;
 		}
 	}
