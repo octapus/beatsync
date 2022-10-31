@@ -31,7 +31,10 @@ fn render(input: &[i16], width: usize, height: usize) -> Vec<u32> {
 		.map(|chunk| chunk.iter().fold(0, |acc, &x| std::cmp::max(acc, x.abs())));
 	assert_eq!(max_list.len(), width);
 	for (i, max) in max_list.enumerate() {
-		for j in 0..(usize::try_from(max).unwrap() * height / usize::try_from(i16::MAX).unwrap()) {
+		let scaled_height =
+			usize::try_from(max).unwrap() * height / usize::try_from(i16::MAX).unwrap();
+		let diff = (height - scaled_height) / 2;
+		for j in diff..(height - diff) {
 			output[j * width + i] = u32::MAX;
 		}
 	}
