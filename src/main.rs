@@ -24,8 +24,25 @@ fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	Some((reader, width, height))
 }
 
-fn render(input: &[i16], width: usize, height: usize) -> Vec<u32> {
-	let mut output = vec![0u32; width * height];
+fn read_file(reader: WavReader<BufReader<File>>) -> Option<(Vec<i16>, Vec<i16>)> {
+	let mut c1 = Vec::with_capacity((reader.len() / 2).try_into().ok()?);
+	let mut c2 = Vec::with_capacity((reader.len() / 2).try_into().ok()?);
+	let mut iter = reader.into_samples();
+	assert_eq!(iter.len() % 2, 0);
+	loop {
+		match (iter.next(), iter.next()) {
+			(Some(a), Some(b)) => {
+				c1.push(a.ok()?);
+				c2.push(b.ok()?);
+			}
+			_ => return Some((c1, c2)),
+		};
+	}
+}
+
+fn render(input: &[i16], output: &mut [u32], width: usize) {
+	assert_eq!(output.len() % width, 0);
+	let height = output.len() / width;
 	let max_list = input
 		.chunks_exact(input.len() / width)
 		.map(|chunk| chunk.iter().fold(0, |acc, &x| std::cmp::max(acc, x.abs())));
@@ -38,7 +55,6 @@ fn render(input: &[i16], width: usize, height: usize) -> Vec<u32> {
 			output[j * width + i] = u32::MAX;
 		}
 	}
-	output
 }
 
 fn main() {
@@ -55,16 +71,18 @@ fn main() {
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
 	let start = Instant::now();
-	let c1: Vec<i16> = reader
-		.into_samples()
-		.step_by(2)
-		.map(|s| s.unwrap())
-		.collect();
+	let (c1, c2) = read_file(reader).unwrap();
 	let elapsed = start.elapsed();
 	println!("Load: {elapsed:.3?}");
 
 	let start = Instant::now();
-	let buffer = render(&c1, width, height);
+	let mut buffer = vec![0u32; width * height];
+	render(&c1, &mut buffer[0..(width * height / 2)], width);
+	render(
+		&c2,
+		&mut buffer[(width * height / 2)..(width * height)],
+		width,
+	);
 	let elapsed = start.elapsed();
 	println!("Render: {elapsed:.3?}");
 
