@@ -99,6 +99,7 @@ fn main() {
 	});
 	// 16700 for 60 fps, 6900 for 144
 	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
+	window.set_position(0, 0);
 
 	// main loop
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
