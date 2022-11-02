@@ -1,4 +1,4 @@
-use std::{env, ffi::OsString, fs::File, io::BufReader};
+use std::{env, ffi::OsString, fs::File, io::BufReader, time::Instant};
 
 use hound::WavReader;
 use minifb::{Key, Window, WindowOptions};
@@ -24,8 +24,51 @@ fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	Some((reader, width, height))
 }
 
+fn read_file(reader: WavReader<BufReader<File>>) -> Option<(Vec<i16>, Vec<i16>)> {
+	let mut c1 = Vec::with_capacity((reader.len() / 2).try_into().ok()?);
+	let mut c2 = Vec::with_capacity((reader.len() / 2).try_into().ok()?);
+	let mut iter = reader.into_samples();
+	assert_eq!(iter.len() % 2, 0);
+	loop {
+		match (iter.next(), iter.next()) {
+			(Some(a), Some(b)) => {
+				c1.push(a.ok()?);
+				c2.push(b.ok()?);
+			}
+			_ => return Some((c1, c2)),
+		};
+	}
+}
+
+fn get_chunks<T>(input: &[T], count: usize) -> Vec<&[T]> {
+	let mut output = Vec::with_capacity(count);
+	for i in 0..count {
+		output.push(&input[(i * input.len() / count)..((i + 1) * input.len() / count)]);
+	}
+	assert_eq!(output.len(), count);
+	output
+}
+
+fn render(input: &[&[i16]], output: &mut [u32]) {
+	let width = input.len();
+	let height = output.len() / input.len();
+	assert_eq!(output.len() % width, 0);
+	let max_list = input
+		.iter()
+		.map(|chunk| chunk.iter().fold(0, |acc, &x| std::cmp::max(acc, x.abs())));
+	assert_eq!(max_list.len(), width);
+	for (i, max) in max_list.enumerate() {
+		let scaled_height =
+			usize::try_from(max).unwrap() * height / usize::try_from(i16::MAX).unwrap();
+		let diff = (height - scaled_height) / 2;
+		for j in diff..(height - diff) {
+			output[j * width + i] = u32::MAX;
+		}
+	}
+}
+
 fn main() {
-	let (mut reader, width, height) = match parse_args() {
+	let (reader, width, height) = match parse_args() {
 		Some((r, w, h)) => (r, w, h),
 		None => {
 			println!("{USAGE}");
@@ -37,13 +80,21 @@ fn main() {
 	assert_eq!(16, reader.spec().bits_per_sample);
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
-	for sample in reader.samples::<i16>().skip(200).take(20) {
-		println!("{}", sample.unwrap());
-	}
+	let start = Instant::now();
+	let (c1, c2) = read_file(reader).unwrap();
+	let (cview1, cview2) = (get_chunks(&c1, width), get_chunks(&c2, width));
+	let elapsed = start.elapsed();
+	println!("Load: {elapsed:.3?}");
+
+	let start = Instant::now();
+	let mut buffer = vec![0u32; width * height];
+	render(&cview1, &mut buffer[0..(width * height / 2)]);
+	render(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
+	let elapsed = start.elapsed();
+	println!("Render: {elapsed:.3?}");
 
 	// gui stuff
-	// in future, make this buffer mut and update it in main loop
-	let buffer: Vec<u32> = vec![u32::MAX; width * height];
+	// in future, make buffer mut and update it in main loop
 	let mut window = Window::new(
 		"Test - ESC to exit",
 		width,
@@ -55,6 +106,7 @@ fn main() {
 	});
 	// 16700 for 60 fps, 6900 for 144
 	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
+	window.set_position(0, 0);
 
 	// main loop
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
