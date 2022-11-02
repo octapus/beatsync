@@ -40,11 +40,21 @@ fn read_file(reader: WavReader<BufReader<File>>) -> Option<(Vec<i16>, Vec<i16>)>
 	}
 }
 
-fn render(input: &[i16], output: &mut [u32], width: usize) {
+fn get_chunks<T>(input: &[T], count: usize) -> Vec<&[T]> {
+	let mut output = Vec::with_capacity(count);
+	for i in 0..count {
+		output.push(&input[(i * input.len() / count)..((i + 1) * input.len() / count)]);
+	}
+	assert_eq!(output.len(), count);
+	output
+}
+
+fn render(input: &[&[i16]], output: &mut [u32]) {
+	let width = input.len();
+	let height = output.len() / input.len();
 	assert_eq!(output.len() % width, 0);
-	let height = output.len() / width;
 	let max_list = input
-		.chunks_exact(input.len() / width)
+		.iter()
 		.map(|chunk| chunk.iter().fold(0, |acc, &x| std::cmp::max(acc, x.abs())));
 	assert_eq!(max_list.len(), width);
 	for (i, max) in max_list.enumerate() {
@@ -72,17 +82,14 @@ fn main() {
 
 	let start = Instant::now();
 	let (c1, c2) = read_file(reader).unwrap();
+	let (cview1, cview2) = (get_chunks(&c1, width), get_chunks(&c2, width));
 	let elapsed = start.elapsed();
 	println!("Load: {elapsed:.3?}");
 
 	let start = Instant::now();
 	let mut buffer = vec![0u32; width * height];
-	render(&c1, &mut buffer[0..(width * height / 2)], width);
-	render(
-		&c2,
-		&mut buffer[(width * height / 2)..(width * height)],
-		width,
-	);
+	render(&cview1, &mut buffer[0..(width * height / 2)]);
+	render(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
 	let elapsed = start.elapsed();
 	println!("Render: {elapsed:.3?}");
 
