@@ -49,7 +49,7 @@ fn get_chunks<T>(input: &[T], count: usize) -> Vec<&[T]> {
 	output
 }
 
-fn render(input: &[&[i16]], output: &mut [u32]) {
+fn render_channel(input: &[&[i16]], output: &mut [u32]) {
 	let width = input.len();
 	let height = output.len() / input.len();
 	assert_eq!(output.len() % width, 0);
@@ -67,6 +67,14 @@ fn render(input: &[&[i16]], output: &mut [u32]) {
 	}
 }
 
+fn render(c1: &[i16], c2: &[i16], width: usize, height: usize) -> Vec<u32> {
+	let (cview1, cview2) = (get_chunks(c1, width), get_chunks(c2, width));
+	let mut buffer = vec![0u32; width * height];
+	render_channel(&cview1, &mut buffer[0..(width * height / 2)]);
+	render_channel(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
+	buffer
+}
+
 fn main() {
 	let (reader, width, height) = match parse_args() {
 		Some((r, w, h)) => (r, w, h),
@@ -80,26 +88,14 @@ fn main() {
 	assert_eq!(16, reader.spec().bits_per_sample);
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
-	let start = Instant::now();
-	let (c1, c2) = read_file(reader).unwrap();
-	let (cview1, cview2) = (get_chunks(&c1, width), get_chunks(&c2, width));
-	let elapsed = start.elapsed();
-	println!("Load: {elapsed:.3?}");
-
-	let start = Instant::now();
-	let mut buffer = vec![0u32; width * height];
-	render(&cview1, &mut buffer[0..(width * height / 2)]);
-	render(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
-	let elapsed = start.elapsed();
-	println!("Render: {elapsed:.3?}");
-
-	// gui stuff
-	// in future, make buffer mut and update it in main loop
 	let mut window = Window::new(
-		"Test - ESC to exit",
+		"Beatsync - ESC or q to exit",
 		width,
 		height,
-		WindowOptions::default(),
+		WindowOptions {
+			resize: true,
+			..WindowOptions::default()
+		},
 	)
 	.unwrap_or_else(|e| {
 		panic!("{}", e);
@@ -107,6 +103,16 @@ fn main() {
 	// 16700 for 60 fps, 6900 for 144
 	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
 	window.set_position(0, 0);
+
+	let start = Instant::now();
+	let (c1, c2) = read_file(reader).unwrap();
+	let elapsed = start.elapsed();
+	println!("Load: {elapsed:.3?}");
+
+	let start = Instant::now();
+	let buffer = render(&c1, &c2, width, height);
+	let elapsed = start.elapsed();
+	println!("Render: {elapsed:.3?}");
 
 	// main loop
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
