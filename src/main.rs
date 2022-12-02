@@ -114,49 +114,45 @@ fn main() {
 	println!("Render: {elapsed:.3?}");
 
 	// main loop
-	let (mut render_start, mut render_len) = (0usize, c1.len());
+	let (mut view_center, mut view_radius) = (c1.len() / 2, c1.len() / 2);
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
 		if let Some((mut dx, mut dy)) = window.get_scroll_wheel() {
 			if window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift) {
 				(dx, dy) = (-dy, dx);
 			}
 			if dx != 0.0 {
-				let delta = (dx.abs() * MOVE_DELTA * (render_len as f32)) as usize;
+				let delta = (dx.abs() * MOVE_DELTA * (view_radius as f32)) as usize;
 				if delta != 0 {
 					if dx.is_sign_positive() {
-						render_start = std::cmp::min(
-							render_start.saturating_add(delta),
-							c1.len().saturating_sub(render_len),
+						view_center = std::cmp::min(
+							view_center.saturating_add(delta),
+							c1.len().saturating_sub(view_radius),
 						);
 					} else {
-						render_start = render_start.saturating_sub(delta);
+						view_center = std::cmp::max(view_center.saturating_sub(delta), view_radius);
 					}
 				}
 			}
 			if dy != 0.0 {
-				let mut delta = (dy.abs() * ZOOM_DELTA * (render_len as f32)) as usize;
-				if dy.is_sign_positive() && 2 * delta > render_len {
-					delta = render_len / 2;
-				} else if dy.is_sign_negative() && 2 * delta + render_len > c1.len() {
-					delta = (c1.len() - render_len) / 2;
-				}
+				let delta = (dy.abs() * ZOOM_DELTA * (view_radius as f32)) as usize;
 				if delta != 0 {
 					if dy.is_sign_positive() {
-						render_len -= 2 * delta;
-						render_start += delta;
+						view_radius = view_radius.saturating_sub(delta);
 					} else {
-						render_len += 2 * delta;
-						render_start = render_start.saturating_sub(delta);
-						if render_start + render_len > c1.len() {
-							render_start = c1.len().saturating_sub(render_len);
+						view_radius =
+							std::cmp::min(view_radius.saturating_add(delta), c1.len() / 2);
+						if view_radius > view_center {
+							view_center = view_radius;
+						} else if view_center + view_radius > c1.len() {
+							view_center = c1.len().saturating_sub(view_radius);
 						}
 					}
 				}
 			}
 			render(
 				&mut buffer,
-				&c1[render_start..(render_start + render_len)],
-				&c2[render_start..(render_start + render_len)],
+				&c1[(view_center - view_radius)..(view_center + view_radius)],
+				&c2[(view_center - view_radius)..(view_center + view_radius)],
 				width,
 				height,
 			);
