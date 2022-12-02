@@ -8,8 +8,8 @@ const USAGE: &str = "Usage: beatsync <file.wav> [window width] [window height]";
 const DEFAULT_WIDTH: usize = 1920;
 const DEFAULT_HEIGHT: usize = 1080;
 
-const ZOOM_DELTA1: f32 = 0.01;
-const ZOOM_DELTA2: f32 = 0.0001;
+const MOVE_DELTA: f32 = 0.01;
+const ZOOM_DELTA: f32 = 0.01;
 
 fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	let args: Vec<OsString> = env::args_os().collect();
@@ -116,18 +116,28 @@ fn main() {
 	// main loop
 	let (mut render_start, mut render_len) = (0usize, c1.len());
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
-		if let Some((_dx, dy)) = window.get_scroll_wheel() {
-			let delta = if window.is_key_down(Key::LeftShift) {
-				ZOOM_DELTA2
-			} else {
-				ZOOM_DELTA1
-			};
+		if let Some((mut dx, mut dy)) = window.get_scroll_wheel() {
+			if window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift) {
+				(dx, dy) = (-dy, dx);
+			}
+			if dx != 0.0 {
+				let delta = (dx.abs() * MOVE_DELTA * (render_len as f32)) as usize;
+				if delta != 0 {
+					if dx.is_sign_positive() {
+						render_start = std::cmp::min(
+							render_start.saturating_add(delta),
+							c1.len().saturating_sub(render_len),
+						);
+					} else {
+						render_start = render_start.saturating_sub(delta);
+					}
+				}
+			}
 			if dy != 0.0 {
-				let mut delta = (dy.abs() * delta * (c1.len() as f32)) as usize;
+				let mut delta = (dy.abs() * ZOOM_DELTA * (render_len as f32)) as usize;
 				if dy.is_sign_positive() && 2 * delta > render_len {
 					delta = render_len / 2;
-				};
-				if dy.is_sign_negative() && 2 * delta + render_len > c1.len() {
+				} else if dy.is_sign_negative() && 2 * delta + render_len > c1.len() {
 					delta = (c1.len() - render_len) / 2;
 				}
 				if delta != 0 {
@@ -136,7 +146,10 @@ fn main() {
 						render_start += delta;
 					} else {
 						render_len += 2 * delta;
-						render_start -= delta;
+						render_start = render_start.saturating_sub(delta);
+						if render_start + render_len > c1.len() {
+							render_start = c1.len().saturating_sub(render_len);
+						}
 					}
 				}
 			}
