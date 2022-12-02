@@ -8,6 +8,9 @@ const USAGE: &str = "Usage: beatsync <file.wav> [window width] [window height]";
 const DEFAULT_WIDTH: usize = 1920;
 const DEFAULT_HEIGHT: usize = 1080;
 
+const ZOOM_DELTA1: f32 = 0.01;
+const ZOOM_DELTA2: f32 = 0.0001;
+
 fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	let args: Vec<OsString> = env::args_os().collect();
 	// waiting for if let chains to become stable...
@@ -67,12 +70,11 @@ fn render_channel(input: &[&[i16]], output: &mut [u32]) {
 	}
 }
 
-fn render(c1: &[i16], c2: &[i16], width: usize, height: usize) -> Vec<u32> {
+fn render(buffer: &mut [u32], c1: &[i16], c2: &[i16], width: usize, height: usize) {
+	buffer.fill(0u32);
 	let (cview1, cview2) = (get_chunks(c1, width), get_chunks(c2, width));
-	let mut buffer = vec![0u32; width * height];
 	render_channel(&cview1, &mut buffer[0..(width * height / 2)]);
 	render_channel(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
-	buffer
 }
 
 fn main() {
@@ -92,30 +94,60 @@ fn main() {
 		"Beatsync - ESC or q to exit",
 		width,
 		height,
-		WindowOptions {
-			resize: true,
-			..WindowOptions::default()
-		},
+		WindowOptions::default(),
 	)
-	.unwrap_or_else(|e| {
-		panic!("{}", e);
-	});
+	.expect("Failed to create window");
 	// 16700 for 60 fps, 6900 for 144
 	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
 	window.set_position(0, 0);
 
 	let start = Instant::now();
 	let (c1, c2) = read_file(reader).unwrap();
+	assert_eq!(c1.len(), c2.len());
 	let elapsed = start.elapsed();
 	println!("Load: {elapsed:.3?}");
 
 	let start = Instant::now();
-	let buffer = render(&c1, &c2, width, height);
+	let mut buffer = vec![0u32; width * height];
+	render(&mut buffer, &c1, &c2, width, height);
 	let elapsed = start.elapsed();
 	println!("Render: {elapsed:.3?}");
 
 	// main loop
+	let (mut render_start, mut render_len) = (0usize, c1.len());
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
+		if let Some((_dx, dy)) = window.get_scroll_wheel() {
+			let delta = if window.is_key_down(Key::LeftShift) {
+				ZOOM_DELTA2
+			} else {
+				ZOOM_DELTA1
+			};
+			if dy != 0.0 {
+				let mut delta = (dy.abs() * delta * (c1.len() as f32)) as usize;
+				if dy.is_sign_positive() && 2 * delta > render_len {
+					delta = render_len / 2;
+				};
+				if dy.is_sign_negative() && 2 * delta + render_len > c1.len() {
+					delta = (c1.len() - render_len) / 2;
+				}
+				if delta != 0 {
+					if dy.is_sign_positive() {
+						render_len -= 2 * delta;
+						render_start += delta;
+					} else {
+						render_len += 2 * delta;
+						render_start -= delta;
+					}
+				}
+			}
+			render(
+				&mut buffer,
+				&c1[render_start..(render_start + render_len)],
+				&c2[render_start..(render_start + render_len)],
+				width,
+				height,
+			);
+		}
 		window.update_with_buffer(&buffer, width, height).unwrap();
 	}
 }
