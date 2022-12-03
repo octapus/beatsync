@@ -8,6 +8,10 @@ const USAGE: &str = "Usage: beatsync <file.wav> [window width] [window height]";
 const DEFAULT_WIDTH: usize = 1920;
 const DEFAULT_HEIGHT: usize = 1080;
 
+const MOVE_DELTA: f32 = 0.1;
+const ZOOM_DELTA: f32 = 0.1;
+const PRECISION_MULTIPLIER: f32 = 0.1;
+
 fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	let args: Vec<OsString> = env::args_os().collect();
 	// waiting for if let chains to become stable...
@@ -49,7 +53,7 @@ fn get_chunks<T>(input: &[T], count: usize) -> Vec<&[T]> {
 	output
 }
 
-fn render(input: &[&[i16]], output: &mut [u32]) {
+fn render_channel(input: &[&[i16]], output: &mut [u32]) {
 	let width = input.len();
 	let height = output.len() / input.len();
 	assert_eq!(output.len() % width, 0);
@@ -67,6 +71,13 @@ fn render(input: &[&[i16]], output: &mut [u32]) {
 	}
 }
 
+fn render(buffer: &mut [u32], c1: &[i16], c2: &[i16], width: usize, height: usize) {
+	buffer.fill(0u32);
+	let (cview1, cview2) = (get_chunks(c1, width), get_chunks(c2, width));
+	render_channel(&cview1, &mut buffer[0..(width * height / 2)]);
+	render_channel(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
+}
+
 fn main() {
 	let (reader, width, height) = match parse_args() {
 		Some((r, w, h)) => (r, w, h),
@@ -80,36 +91,78 @@ fn main() {
 	assert_eq!(16, reader.spec().bits_per_sample);
 	assert_eq!(hound::SampleFormat::Int, reader.spec().sample_format);
 
+	let mut window = Window::new(
+		"Beatsync - ESC or q to exit",
+		width,
+		height,
+		WindowOptions::default(),
+	)
+	.expect("Failed to create window");
+	// 16700 for 60 fps, 6900 for 144
+	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
+	window.set_position(0, 0);
+
 	let start = Instant::now();
 	let (c1, c2) = read_file(reader).unwrap();
-	let (cview1, cview2) = (get_chunks(&c1, width), get_chunks(&c2, width));
+	assert_eq!(c1.len(), c2.len());
 	let elapsed = start.elapsed();
 	println!("Load: {elapsed:.3?}");
 
 	let start = Instant::now();
 	let mut buffer = vec![0u32; width * height];
-	render(&cview1, &mut buffer[0..(width * height / 2)]);
-	render(&cview2, &mut buffer[(width * height / 2)..(width * height)]);
+	render(&mut buffer, &c1, &c2, width, height);
 	let elapsed = start.elapsed();
 	println!("Render: {elapsed:.3?}");
 
-	// gui stuff
-	// in future, make buffer mut and update it in main loop
-	let mut window = Window::new(
-		"Test - ESC to exit",
-		width,
-		height,
-		WindowOptions::default(),
-	)
-	.unwrap_or_else(|e| {
-		panic!("{}", e);
-	});
-	// 16700 for 60 fps, 6900 for 144
-	window.limit_update_rate(Some(std::time::Duration::from_micros(6800)));
-	window.set_position(0, 0);
-
 	// main loop
+	let (mut view_center, mut view_radius) = (c1.len() / 2, c1.len() / 2);
 	while window.is_open() && !window.is_key_down(Key::Escape) && !window.is_key_down(Key::Q) {
+		if let Some((mut dx, mut dy)) = window.get_scroll_wheel() {
+			if window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift) {
+				(dx, dy) = (-dy, dx);
+			}
+			let multiplier = if window.is_key_down(Key::Space) {
+				PRECISION_MULTIPLIER
+			} else {
+				1.0
+			};
+			if dx != 0.0 {
+				let delta = (dx.abs() * MOVE_DELTA * multiplier * (view_radius as f32)) as usize;
+				if delta != 0 {
+					if dx.is_sign_positive() {
+						view_center = std::cmp::min(
+							view_center.saturating_add(delta),
+							c1.len().saturating_sub(view_radius),
+						);
+					} else {
+						view_center = std::cmp::max(view_center.saturating_sub(delta), view_radius);
+					}
+				}
+			}
+			if dy != 0.0 {
+				let delta = (dy.abs() * ZOOM_DELTA * multiplier * (view_radius as f32)) as usize;
+				if delta != 0 {
+					if dy.is_sign_positive() {
+						view_radius = view_radius.saturating_sub(delta);
+					} else {
+						view_radius =
+							std::cmp::min(view_radius.saturating_add(delta), c1.len() / 2);
+						if view_radius > view_center {
+							view_center = view_radius;
+						} else if view_center + view_radius > c1.len() {
+							view_center = c1.len().saturating_sub(view_radius);
+						}
+					}
+				}
+			}
+			render(
+				&mut buffer,
+				&c1[(view_center - view_radius)..(view_center + view_radius)],
+				&c2[(view_center - view_radius)..(view_center + view_radius)],
+				width,
+				height,
+			);
+		}
 		window.update_with_buffer(&buffer, width, height).unwrap();
 	}
 }
