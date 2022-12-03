@@ -8,8 +8,9 @@ const USAGE: &str = "Usage: beatsync <file.wav> [window width] [window height]";
 const DEFAULT_WIDTH: usize = 1920;
 const DEFAULT_HEIGHT: usize = 1080;
 
-const MOVE_DELTA: f32 = 0.01;
-const ZOOM_DELTA: f32 = 0.01;
+const MOVE_DELTA: f32 = 0.1;
+const ZOOM_DELTA: f32 = 0.1;
+const PRECISION_MULTIPLIER: f32 = 0.1;
 
 fn parse_args() -> Option<(WavReader<BufReader<File>>, usize, usize)> {
 	let args: Vec<OsString> = env::args_os().collect();
@@ -120,8 +121,13 @@ fn main() {
 			if window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift) {
 				(dx, dy) = (-dy, dx);
 			}
+			let multiplier = if window.is_key_down(Key::Space) {
+				PRECISION_MULTIPLIER
+			} else {
+				1.0
+			};
 			if dx != 0.0 {
-				let delta = (dx.abs() * MOVE_DELTA * (view_radius as f32)) as usize;
+				let delta = (dx.abs() * MOVE_DELTA * multiplier * (view_radius as f32)) as usize;
 				if delta != 0 {
 					if dx.is_sign_positive() {
 						view_center = std::cmp::min(
@@ -134,7 +140,7 @@ fn main() {
 				}
 			}
 			if dy != 0.0 {
-				let delta = (dy.abs() * ZOOM_DELTA * (view_radius as f32)) as usize;
+				let delta = (dy.abs() * ZOOM_DELTA * multiplier * (view_radius as f32)) as usize;
 				if delta != 0 {
 					if dy.is_sign_positive() {
 						view_radius = view_radius.saturating_sub(delta);
